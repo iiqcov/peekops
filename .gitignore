@@ -1,0 +1,23 @@
+# Environment
+.env
+
+# Logs
+*.csv
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Prometheus multiproc
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
