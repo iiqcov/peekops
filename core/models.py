@@ -27,6 +27,7 @@ class ReActTurn:
     analysis: str
     command : str = ""
     result  : str = ""
+    issue   : str = ""      # the issue this turn investigated (per-issue loops)
 
 
 @dataclass
