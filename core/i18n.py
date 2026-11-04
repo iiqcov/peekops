@@ -44,6 +44,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "react_format"     : "Reply ONLY:\nanalysis: <hypothesis max 2 lines>\ncommand: <command or DONE>",
         "react_analysis"   : "analysis:",
         "react_command"    : "command:",
+        "ans_none"         : "none",
+        "ans_healthy"      : "healthy",
+        "ans_unknown"      : "unknown",
+        "ans_turn"         : "turn {}",
+        "ans_ran"          : "ran",
+        "ans_action_default": "Refer to the investigation steps above",
         # ── fallback ──
         "fallback_cause"   : "AI unavailable — rule-based diagnosis",
         "fallback_steps"   : "N/A (rule-based fallback)",
@@ -80,6 +86,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "report_react"     : "ReAct Runs",
         "report_footer"    : "AIOps Monitor | {}",
         "report_no_data"   : "No data for {}",
+        "report_unit_runs" : "{} runs",
+        "report_unit_times": "{} times",
     },
     "ko": {
         "issue_cpu"        : "CPU 과부하: {}%",
@@ -113,6 +121,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "react_format"     : "반드시 아래 형식으로만:\n분석: <가설 2줄 이내>\n명령어: <명령어 또는 DONE>",
         "react_analysis"   : "분석:",
         "react_command"    : "명령어:",
+        "ans_none"         : "없음",
+        "ans_healthy"      : "정상",
+        "ans_unknown"      : "알 수 없음",
+        "ans_turn"         : "{}턴",
+        "ans_ran"          : "실행",
+        "ans_action_default": "위 조사 과정 참고",
         "fallback_cause"   : "AI 분석 불가 — 룰 기반 진단",
         "fallback_steps"   : "없음 (룰 기반 폴백)",
         "fallback_action"  : "top / free -m / df -h / ps aux | grep Z 로 직접 확인",
@@ -146,6 +160,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "report_react"     : "ReAct 실행",
         "report_footer"    : "AIOps Monitor | {}",
         "report_no_data"   : "{} 데이터 없음",
+        "report_unit_runs" : "{}회",
+        "report_unit_times": "{}회",
     },
 }
 
