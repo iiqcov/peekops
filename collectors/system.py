@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import socket
 import platform
+import time
 from datetime import datetime
 import psutil
 
@@ -93,30 +94,55 @@ class NetworkCollector(BaseCollector):
 
 
 class OsCollector(BaseCollector):
+    # psutil returns 0.0 on the first cpu_percent() call for a process, so
+    # usage is sampled over this window (CpuCollector already blocks for 1s).
+    CPU_SAMPLE_SEC = 0.5
+    TOP_N          = 5
+
     def collect(self) -> dict:
         boot_time = datetime.fromtimestamp(psutil.boot_time())
         uptime_h  = round((datetime.now() - boot_time).total_seconds() / 3600, 1)
         my_pid    = os.getpid()
 
-        zombies = [
-            p for p in psutil.process_iter(["status", "name", "ppid"])
-            if p.info["status"] == "zombie"
-            and p.info.get("name") != "run-parts"
-            and p.info.get("ppid") != my_pid
-        ]
+        zombies: list[dict] = []
+        for p in psutil.process_iter(["pid", "status", "name", "ppid"]):
+            info = p.info
+            if (info["status"] == psutil.STATUS_ZOMBIE
+                    and info.get("name") != "run-parts"
+                    and info.get("ppid") != my_pid):
+                zombies.append({"pid": info["pid"], "ppid": info.get("ppid"), "name": info.get("name")})
 
-        procs: list[dict] = []
-        for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+        procs = list(psutil.process_iter(["pid", "name"]))
+        for p in procs:
             try:
-                procs.append(p.info)
+                p.cpu_percent(None)  # prime
             except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        time.sleep(self.CPU_SAMPLE_SEC)
+
+        samples: list[dict] = []
+        for p in procs:
+            try:
+                with p.oneshot():
+                    samples.append({
+                        "pid"           : p.pid,
+                        "name"          : p.info.get("name"),
+                        "cpu_percent"   : round(p.cpu_percent(None), 1),
+                        "memory_percent": round(p.memory_percent(), 1),
+                        "rss_mb"        : round(p.memory_info().rss / 1e6, 1),
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
-        top_cpu = sorted(procs, key=lambda x: x.get("cpu_percent", 0), reverse=True)[:5]
+
+        top_cpu = sorted(samples, key=lambda x: x["cpu_percent"], reverse=True)[:self.TOP_N]
+        top_mem = sorted(samples, key=lambda x: x["rss_mb"], reverse=True)[:self.TOP_N]
 
         return {
             "hostname"     : socket.gethostname(),
             "os"           : f"{platform.system()} {platform.release()}",
             "uptime_hours" : uptime_h,
             "zombie_count" : len(zombies),
+            "zombies"      : zombies[:self.TOP_N],
             "top_cpu_procs": top_cpu,
+            "top_mem_procs": top_mem,
         }

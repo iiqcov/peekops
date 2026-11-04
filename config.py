@@ -33,6 +33,17 @@ PROMETHEUS_MULTIPROC_DIR: str = "/tmp/aiops_prometheus_multiproc"
 # ── Prometheus ────────────────────────────────────────
 PROMETHEUS_PORT: int = int(os.getenv("PROMETHEUS_PORT", "8000"))
 
+# ── Prometheus query (anchor selection by recent growth, #17) ──
+# Base URL of the Prometheus server that holds cAdvisor container metrics,
+# e.g. http://10.43.187.96 (ClusterIP is reachable from a K3s node).
+# Empty = disabled; anchors fall back to the top process at detection time.
+PROMETHEUS_QUERY_URL: str = os.getenv("PROMETHEUS_QUERY_URL", "")
+# How far back to compare when looking for the container that grew the most.
+ANCHOR_CHANGE_WINDOW: str = os.getenv("ANCHOR_CHANGE_WINDOW", "30m")
+# Growth below these is treated as "nothing changed" (keep the top-process anchor).
+ANCHOR_MIN_MEM_GROWTH_MB: float = float(os.getenv("ANCHOR_MIN_MEM_GROWTH_MB", "100"))
+ANCHOR_MIN_CPU_GROWTH_CORES: float = float(os.getenv("ANCHOR_MIN_CPU_GROWTH_CORES", "0.2"))
+
 # ── Scheduling ────────────────────────────────────────
 # Interval between diagnostic runs (seconds)
 INTERVAL_SEC: int = 600      # 10 minutes
@@ -52,8 +63,16 @@ THRESHOLD: dict = {
 }
 
 # ── ReAct ─────────────────────────────────────────────
-# Maximum number of LLM reasoning turns per incident
+# Maximum number of LLM reasoning turns per issue
 MAX_REACT_TURNS: int = 4
+
+# When several issues are detected, each gets its own ReAct loop.
+# At most this many issues are investigated per run (highest severity first).
+MAX_ISSUES_PER_RUN: int = int(os.getenv("MAX_ISSUES_PER_RUN", "3"))
+
+# Total time all ReAct loops may use in one run (seconds).
+# Must stay below MAX_RUN_SEC so the run is not force-killed.
+REACT_TIME_BUDGET_SEC: int = int(os.getenv("REACT_TIME_BUDGET_SEC", "420"))
 
 # LLM call timeout (seconds)
 LLM_TIMEOUT: int = 300

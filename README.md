@@ -112,6 +112,8 @@ Key settings in `config.py` (all overridable via environment variables):
 | `DISCORD_REPORT_WEBHOOK` | — | Webhook for daily reports |
 | `LOG_FILE` | `/home/user/diagnostics.csv` | CSV log path |
 | `PROMETHEUS_PORT` | `8000` | Metrics exporter port |
+| `PROMETHEUS_QUERY_URL` | — | Prometheus to query for container growth; anchors issues on the container that grew most (empty = off) |
+| `ANCHOR_CHANGE_WINDOW` | `30m` | Window for the growth comparison |
 | `INTERVAL_SEC` | `600` | Seconds between diagnostic runs |
 | `THRESHOLD` | see config.py | Per-metric alert thresholds |
 
