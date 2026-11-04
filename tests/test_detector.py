@@ -21,7 +21,7 @@ def test_thresholds_trigger_issues(snapshot, en):
 def test_abnormal_pod_is_reported(snapshot, en):
     snap = snapshot(k8s={"total": 1, "not_running": [
         {"namespace": "ai", "name": "ollama-0", "ready": "0/1", "status": "CrashLoopBackOff"}]})
-    assert IssueDetector().detect(snap) == ["Pod abnormal: ai/ollama-0 (CrashLoopBackOff)"]
+    assert IssueDetector().detect(snap) == ["Pod abnormal: ollama-0 (namespace: ai, status: CrashLoopBackOff)"]
 
 
 def test_kubectl_error_is_not_an_issue(snapshot, en):

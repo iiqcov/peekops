@@ -10,6 +10,7 @@ import config
 from core.i18n import t
 from core.models import ServerSnapshot, DiagnosticResult, ReActTurn
 from analyzers.llm import LLMClient
+from analyzers import kubectl
 
 # ── Security ──────────────────────────────────────────────────────────────────
 
@@ -231,7 +232,7 @@ class ReActEngine:
                 if not cmd or cmd.upper() == "DONE":
                     done = True
                 else:
-                    command = self._runner.sanitize(cmd)
+                    command = self._runner.sanitize(kubectl.normalize(cmd))
         return analysis, command, done
 
     def _build_answer(self, issues: list[str], history: list[ReActTurn]) -> str:
