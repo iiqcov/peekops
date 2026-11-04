@@ -118,3 +118,12 @@ def test_http_error_is_reported(post):
 def test_unexpected_shape_is_error(post):
     post({"choices": []})
     assert OpenAICompatibleClient(model="m").generate("p").startswith("ERROR:openai unexpected response")
+
+
+def test_engine_builds_its_client_from_config(monkeypatch):
+    # Guards the wiring in ReActEngine.__init__: without an injected client the
+    # engine must honor LLM_PROVIDER (and degrade instead of crashing).
+    monkeypatch.setattr(config, "LLM_PROVIDER", "nope")
+    assert isinstance(ReActEngine()._llm, DisabledClient)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama")
+    assert isinstance(ReActEngine()._llm, OllamaClient)
