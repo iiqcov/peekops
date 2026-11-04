@@ -246,10 +246,10 @@ class ReActEngine:
             severity = "MED"
 
         steps = "\n".join(
-            f"  [turn {h.turn}] {h.analysis}" + (f"\n    ran: {h.command}" if h.command else "")
+            f"  [{t('ans_turn', h.turn)}] {h.analysis}" + (f"\n    {t('ans_ran')}: {h.command}" if h.command else "")
             for h in history
         )
-        action = "refer to investigation above"
+        action = t("ans_action_default")
         for h in reversed(history):
             if any(k in h.analysis.lower() for k in ["fix", "restart", "remove", "해결", "조치", "재시작"]):
                 action = h.analysis
@@ -260,7 +260,7 @@ class ReActEngine:
             t("ans_steps"), t("ans_action"), t("ans_monitor"),
         )
         return (
-            f"{sk}: {severity}\n{pk}: {issues[0] if issues else 'none'}\n"
+            f"{sk}: {severity}\n{pk}: {issues[0] if issues else t('ans_none')}\n"
             f"{ck}: {last}\n{stk}:\n{steps}\n{ak}: {action}\n"
             f"{mk}: ps aux | grep -w Z; journalctl -n 20"
         )
@@ -280,9 +280,9 @@ class ReActEngine:
         )
         return DiagnosticResult(
             answer=(
-                f"{sk}: {severity}\n{pk}: {issues[0] if issues else 'none'}\n"
+                f"{sk}: {severity}\n{pk}: {issues[0] if issues else t('ans_none')}\n"
                 f"{ck}: {t('fallback_cause')}\n{stk}: {t('fallback_steps')}\n"
-                f"{ak}: {t('fallback_action')}\n{mk}: {' / '.join(issues) or 'none'}"
+                f"{ak}: {t('fallback_action')}\n{mk}: {' / '.join(issues) or t('ans_none')}"
             ),
             latency_sec=-1, tokens_out=0, tok_per_sec=0,
         )

@@ -71,9 +71,10 @@ class DiagnosticRunner:
             t("ans_severity"), t("ans_problem"), t("ans_cause"),
             t("ans_steps"), t("ans_action"), t("ans_monitor"),
         )
+        none = t("ans_none")
         return DiagnosticResult(
-            answer=(f"{sk}: NORMAL\n{pk}: none\n{ck}: healthy\n"
-                    f"{stk}: none\n{ak}: none\n{mk}: none"),
+            answer=(f"{sk}: NORMAL\n{pk}: {none}\n{ck}: {t('ans_healthy')}\n"
+                    f"{stk}: {none}\n{ak}: {none}\n{mk}: {none}"),
             latency_sec=0, tokens_out=0, tok_per_sec=0,
         )
 
