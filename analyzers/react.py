@@ -94,7 +94,8 @@ class PromptBuilder:
     """Builds ReAct prompts from server state and history."""
 
     @staticmethod
-    def build(snap: ServerSnapshot, issues: list[str], history: list[ReActTurn]) -> str:
+    def build(snap: ServerSnapshot, issues: list[str], history: list[ReActTurn],
+              others: list[str] | tuple[str, ...] = ()) -> str:
         cpu = snap.cpu
         mem = snap.memory
         os_ = snap.os
@@ -123,6 +124,10 @@ class PromptBuilder:
                 unique_hints.append(h)
 
         hint_text  = "\n".join(f"- {h}" for h in unique_hints) or "none"
+        others_text = (
+            f"\n{t('react_others')}\n" + "\n".join(f"- {o}" for o in others) + "\n"
+            if others else ""
+        )
         hist_text  = history_text or f" {t('react_none')}"
         turn_num   = len(history) + 1
         analysis_p = t("react_analysis").rstrip(":")
@@ -142,7 +147,7 @@ zombies  : {os_.get('zombie_count')}
 
 {t('react_issues')}
 {chr(10).join(f'- {i}' for i in issues)}
-
+{others_text}
 {t('react_hints')}
 {hint_text}
 
@@ -165,22 +170,41 @@ class ReActEngine:
     """
 
     def __init__(self, llm: LLMClient | None = None):
-        self._llm     = llm or LLMClient()
-        self._runner  = CommandRunner()
-        self._builder = PromptBuilder()
+        self._llm       = llm or LLMClient()
+        self._runner    = CommandRunner()
+        self._builder   = PromptBuilder()
+        self._turn_secs : list[float] = []
 
     def run(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
         if snap.cpu.get("percent", 0) >= config.LLM_SKIP_CPU_THRESHOLD:
             print(f"  [ReAct] CPU >= {config.LLM_SKIP_CPU_THRESHOLD}% → rule-based fallback")
             return self._fallback(issues)
+        if len(issues) <= 1:
+            return self._run_single(snap, issues)
+        return self._run_per_issue(snap, issues)
 
-        start   = time.time()
+    # ── loops ────────────────────────────────────────────────────────────────
+
+    def _investigate(
+        self,
+        snap    : ServerSnapshot,
+        issues  : list[str],
+        deadline: float | None = None,
+        others  : list[str] | tuple[str, ...] = (),
+    ) -> list[ReActTurn]:
+        """One ReAct loop over `issues`. Stops early when the deadline is near."""
         history : list[ReActTurn] = []
+        label   = issues[0] if len(issues) == 1 and others else ""
 
         for turn_num in range(1, config.MAX_REACT_TURNS + 1):
+            if deadline is not None and time.time() + self._turn_estimate() > deadline:
+                print(f"    → time budget reached, stopping after {len(history)} turns")
+                break
             print(f"\n  [ReAct {turn_num}/{config.MAX_REACT_TURNS}] LLM reasoning...")
-            prompt = self._builder.build(snap, issues, history)
-            raw    = self._llm.generate(prompt)
+            prompt  = self._builder.build(snap, issues, history, others)
+            t0      = time.time()
+            raw     = self._llm.generate(prompt)
+            self._turn_secs.append(time.time() - t0)
 
             if not raw or raw.startswith("ERROR"):
                 print(f"    → LLM error: {raw}")
@@ -190,7 +214,7 @@ class ReActEngine:
             analysis, command, done = self._parse(raw)
             print(f"    analysis: {analysis}")
 
-            turn = ReActTurn(turn=turn_num, analysis=analysis, command=command)
+            turn = ReActTurn(turn=turn_num, analysis=analysis, command=command, issue=label)
 
             if done or not command:
                 history.append(turn)
@@ -202,18 +226,55 @@ class ReActEngine:
             print(f"    → result ({len(turn.result)} chars): {turn.result[:120]}")
             history.append(turn)
 
+        return history
+
+    def _turn_estimate(self) -> float:
+        """Time to reserve for one more turn: 1.5x the slowest turn so far, at least 30s."""
+        return max(30.0, 1.5 * max(self._turn_secs, default=0.0))
+
+    def _run_single(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
+        start   = time.time()
+        history = self._investigate(snap, issues)
         if not history:
             return self._fallback(issues)
 
         latency = round(time.time() - start, 2)
         print(f"\n  [ReAct done] {len(history)} turns / {latency}s")
+        return self._result(self._build_answer(issues, history), history, latency)
 
+    def _run_per_issue(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
+        """Give each issue its own loop (#4), highest rule severity first, within a time budget."""
+        start    = time.time()
+        deadline = start + config.REACT_TIME_BUDGET_SEC
+        ordered  = self._prioritize(issues)
+        targets  = ordered[:config.MAX_ISSUES_PER_RUN]
+        skipped  = ordered[config.MAX_ISSUES_PER_RUN:]
+
+        findings: list[tuple[str, list[ReActTurn]]] = []
+        for i, issue in enumerate(targets, 1):
+            if time.time() + self._turn_estimate() > deadline:
+                skipped.append(issue)
+                continue
+            print(f"\n  [ReAct issue {i}/{len(targets)}] {issue}")
+            others = [o for o in issues if o != issue]
+            findings.append((issue, self._investigate(snap, [issue], deadline, others)))
+
+        if not any(h for _, h in findings):
+            return self._fallback(issues)
+
+        turns   = [turn for _, h in findings for turn in h]
+        latency = round(time.time() - start, 2)
+        print(f"\n  [ReAct done] {len(findings)} issues / {len(turns)} turns / {latency}s")
+        return self._result(self._build_multi_answer(ordered, findings, skipped), turns, latency)
+
+    @staticmethod
+    def _result(answer: str, turns: list[ReActTurn], latency: float) -> DiagnosticResult:
         return DiagnosticResult(
-            answer      = self._build_answer(issues, history),
+            answer      = answer,
             latency_sec = latency,
-            tokens_out  = len(history) * config.LLM_MAX_TOKENS,
-            tok_per_sec = round((len(history) * config.LLM_MAX_TOKENS) / max(latency, 1), 1),
-            turns       = history,
+            tokens_out  = len(turns) * config.LLM_MAX_TOKENS,
+            tok_per_sec = round((len(turns) * config.LLM_MAX_TOKENS) / max(latency, 1), 1),
+            turns       = turns,
         )
 
     def _parse(self, raw: str) -> tuple[str, str, bool]:
@@ -234,53 +295,103 @@ class ReActEngine:
                     command = self._runner.sanitize(cmd)
         return analysis, command, done
 
-    def _build_answer(self, issues: list[str], history: list[ReActTurn]) -> str:
-        last    = history[-1].analysis
-        full    = " ".join(h.analysis for h in history).lower()
+    # ── answers ──────────────────────────────────────────────────────────────
 
+    SEVERITY_RANK = {"NORMAL": 0, "LOW": 1, "MED": 2, "HIGH": 3}
+
+    @staticmethod
+    def _ai_severity(history: list[ReActTurn]) -> str:
+        full = " ".join(h.analysis for h in history).lower()
         if any(k in full for k in ["normal", "benign", "minor", "정상", "무해", "경미"]):
-            severity = "LOW"
-        elif any(k in full for k in ["oom", "disk full", "unreachable", "critical", "심각", "즉시"]):
-            severity = "HIGH"
-        else:
-            severity = "MED"
+            return "LOW"
+        if any(k in full for k in ["oom", "disk full", "unreachable", "critical", "심각", "즉시"]):
+            return "HIGH"
+        return "MED"
 
-        steps = "\n".join(
-            f"  [{t('ans_turn', h.turn)}] {h.analysis}" + (f"\n    {t('ans_ran')}: {h.command}" if h.command else "")
-            for h in history
-        )
-        action = t("ans_action_default")
-        for h in reversed(history):
-            if any(k in h.analysis.lower() for k in ["fix", "restart", "remove", "해결", "조치", "재시작"]):
-                action = h.analysis
-                break
-
-        sk, pk, ck, stk, ak, mk = (
-            t("ans_severity"), t("ans_problem"), t("ans_cause"),
-            t("ans_steps"), t("ans_action"), t("ans_monitor"),
-        )
-        return (
-            f"{sk}: {severity}\n{pk}: {issues[0] if issues else t('ans_none')}\n"
-            f"{ck}: {last}\n{stk}:\n{steps}\n{ak}: {action}\n"
-            f"{mk}: ps aux | grep -w Z; journalctl -n 20"
-        )
-
-    def _fallback(self, issues: list[str]) -> DiagnosticResult:
+    @staticmethod
+    def _rule_severity(issues: list[str]) -> str:
         severity = "LOW"
         for iss in issues:
             if any(k in iss for k in ["CPU overload", "Memory pressure", "unreachable", "OOMKilled",
                                        "CPU 과부하", "메모리 부족", "인터넷"]):
-                severity = "HIGH"; break
+                return "HIGH"
             if any(k in iss for k in ["Swap", "Disk", "Zombie", "Pod", "스왑", "디스크", "좀비"]):
                 severity = "MED"
+        return severity
 
-        sk, pk, ck, stk, ak, mk = (
-            t("ans_severity"), t("ans_problem"), t("ans_cause"),
-            t("ans_steps"), t("ans_action"), t("ans_monitor"),
+    def _prioritize(self, issues: list[str]) -> list[str]:
+        rank = self.SEVERITY_RANK
+        return sorted(issues, key=lambda i: -rank[self._rule_severity([i])])  # stable
+
+    @staticmethod
+    def _action(history: list[ReActTurn]) -> str | None:
+        for h in reversed(history):
+            if any(k in h.analysis.lower() for k in ["fix", "restart", "remove", "해결", "조치", "재시작"]):
+                return h.analysis
+        return None
+
+    @staticmethod
+    def _steps(history: list[ReActTurn], indent: str = "  ") -> str:
+        return "\n".join(
+            f"{indent}[{t('ans_turn', h.turn)}] {h.analysis}"
+            + (f"\n{indent}  {t('ans_ran')}: {h.command}" if h.command else "")
+            for h in history
         )
+
+    @staticmethod
+    def _keys() -> tuple[str, ...]:
+        return (t("ans_severity"), t("ans_problem"), t("ans_cause"),
+                t("ans_steps"), t("ans_action"), t("ans_monitor"))
+
+    def _build_answer(self, issues: list[str], history: list[ReActTurn]) -> str:
+        sk, pk, ck, stk, ak, mk = self._keys()
+        return (
+            f"{sk}: {self._ai_severity(history)}\n{pk}: {issues[0] if issues else t('ans_none')}\n"
+            f"{ck}: {history[-1].analysis}\n{stk}:\n{self._steps(history)}\n"
+            f"{ak}: {self._action(history) or t('ans_action_default')}\n"
+            f"{mk}: ps aux | grep -w Z; journalctl -n 20"
+        )
+
+    def _build_multi_answer(
+        self,
+        ordered : list[str],
+        findings: list[tuple[str, list[ReActTurn]]],
+        skipped : list[str],
+    ) -> str:
+        """One answer for several per-issue loops. Severity = the highest found."""
+        sk, pk, ck, stk, ak, mk = self._keys()
+        rank = self.SEVERITY_RANK
+
+        severities, causes, steps, actions = [], [], [], []
+        for issue, history in findings:
+            if history:
+                severities.append(self._ai_severity(history))
+                causes.append(f"- {issue}: {history[-1].analysis}")
+                steps.append(f"  ▸ {issue}\n{self._steps(history, indent='    ')}")
+                action = self._action(history)
+                if action:
+                    actions.append(f"- {issue}: {action}")
+            else:
+                severities.append(self._rule_severity([issue]))
+                causes.append(f"- {issue}: {t('fallback_cause')}")
+        for issue in skipped:
+            severities.append(self._rule_severity([issue]))
+            causes.append(f"- {issue}: {t('ans_skipped')}")
+
+        severity = max(severities, key=lambda s: rank[s])
+        return (
+            f"{sk}: {severity}\n{pk}: {ordered[0]}\n"
+            f"{ck}:\n" + "\n".join(causes) + "\n"
+            f"{stk}:\n" + "\n".join(steps) + "\n"
+            f"{ak}: " + ("\n" + "\n".join(actions) if actions else t("ans_action_default")) + "\n"
+            f"{mk}: ps aux | grep -w Z; journalctl -n 20"
+        )
+
+    def _fallback(self, issues: list[str]) -> DiagnosticResult:
+        sk, pk, ck, stk, ak, mk = self._keys()
         return DiagnosticResult(
             answer=(
-                f"{sk}: {severity}\n{pk}: {issues[0] if issues else t('ans_none')}\n"
+                f"{sk}: {self._rule_severity(issues)}\n{pk}: {issues[0] if issues else t('ans_none')}\n"
                 f"{ck}: {t('fallback_cause')}\n{stk}: {t('fallback_steps')}\n"
                 f"{ak}: {t('fallback_action')}\n{mk}: {' / '.join(issues) or t('ans_none')}"
             ),

@@ -52,8 +52,16 @@ THRESHOLD: dict = {
 }
 
 # ── ReAct ─────────────────────────────────────────────
-# Maximum number of LLM reasoning turns per incident
+# Maximum number of LLM reasoning turns per issue
 MAX_REACT_TURNS: int = 4
+
+# When several issues are detected, each gets its own ReAct loop.
+# At most this many issues are investigated per run (highest severity first).
+MAX_ISSUES_PER_RUN: int = int(os.getenv("MAX_ISSUES_PER_RUN", "3"))
+
+# Total time all ReAct loops may use in one run (seconds).
+# Must stay below MAX_RUN_SEC so the run is not force-killed.
+REACT_TIME_BUDGET_SEC: int = int(os.getenv("REACT_TIME_BUDGET_SEC", "420"))
 
 # LLM call timeout (seconds)
 LLM_TIMEOUT: int = 300
