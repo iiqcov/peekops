@@ -18,7 +18,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "issue_net"        : "Internet unreachable",
         "issue_net_err"    : "Network errors: in={} out={}",
         "issue_zombie"     : "Zombie processes: {}",
-        "issue_pod"        : "Pod abnormal: {}/{} ({})",
+        "issue_pod"        : "Pod abnormal: {1} (namespace: {0}, status: {2})",
         # ── general ──
         "no_issues"        : "No issues detected",
         "all_pods_healthy" : "All pods healthy",
@@ -90,7 +90,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "issue_net"        : "인터넷 연결 불가",
         "issue_net_err"    : "네트워크 에러 다수: in={} out={}",
         "issue_zombie"     : "좀비 프로세스: {}개",
-        "issue_pod"        : "Pod 이상: {}/{} ({})",
+        "issue_pod"        : "Pod 이상: {1} (네임스페이스: {0}, 상태: {2})",
         "no_issues"        : "이상 없음",
         "all_pods_healthy" : "전체 정상",
         "connected"        : "연결됨",
