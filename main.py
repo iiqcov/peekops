@@ -50,12 +50,14 @@ class DiagnosticRunner:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] starting diagnostics...")
         self._prometheus.start()
 
-        snap   = self._collector.collect()
-        issues = self._detector.detect(snap)
+        snap     = self._collector.collect()
+        anchored = self._detector.detect_anchored(snap)
+        issues   = [issue for issue, _ in anchored]
+        anchors  = {issue: anchor for issue, anchor in anchored if anchor}
 
         if issues:
             print(f"  ⚠  {len(issues)} issue(s) → ReAct loop starting...")
-            result = self._react.run(snap, issues)
+            result = self._react.run(snap, issues, anchors)
         else:
             result = self._healthy_result()
 
@@ -71,9 +73,10 @@ class DiagnosticRunner:
             t("ans_severity"), t("ans_problem"), t("ans_cause"),
             t("ans_steps"), t("ans_action"), t("ans_monitor"),
         )
+        none = t("ans_none")
         return DiagnosticResult(
-            answer=(f"{sk}: NORMAL\n{pk}: none\n{ck}: healthy\n"
-                    f"{stk}: none\n{ak}: none\n{mk}: none"),
+            answer=(f"{sk}: NORMAL\n{pk}: {none}\n{ck}: {t('ans_healthy')}\n"
+                    f"{stk}: {none}\n{ak}: {none}\n{mk}: {none}"),
             latency_sec=0, tokens_out=0, tok_per_sec=0,
         )
 
