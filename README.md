@@ -60,7 +60,7 @@ peekops/
 │
 ├── analyzers/
 │   ├── detector.py        # threshold-based issue detection
-│   ├── llm.py             # Ollama LLM client
+│   ├── llm.py             # LLM clients (Ollama default, OpenAI-compatible, Gemini)
 │   └── react.py           # ReAct loop engine
 │
 ├── notifiers/
@@ -108,6 +108,10 @@ Key settings in `config.py` (all overridable via environment variables):
 | `AIOPS_LANG` | `en` | Output language (`en` or `ko`) |
 | `OLLAMA_URL` | `http://localhost:11434/...` | Ollama endpoint |
 | `OLLAMA_MODEL` | `qwen3:8b` | Model to use |
+| `LLM_PROVIDER` | `ollama` | `ollama` · `openai` (OpenAI-compatible) · `gemini` |
+| `LLM_ALLOW_EXTERNAL` | `false` | Allow sending prompts (process lists, logs) to a non-local endpoint |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` / `OPENAI_API_KEY` | `http://localhost:8080/v1` | OpenAI-compatible server (llama.cpp, vLLM, LM Studio, cloud) |
+| `GEMINI_MODEL` / `GEMINI_API_KEY` | `gemini-2.5-flash` | Gemini API |
 | `DISCORD_ALERT_WEBHOOK` | — | Webhook for incident alerts |
 | `DISCORD_REPORT_WEBHOOK` | — | Webhook for daily reports |
 | `LOG_FILE` | `/home/user/diagnostics.csv` | CSV log path |

@@ -40,7 +40,7 @@ def post(monkeypatch):
     calls = []
 
     def install(text):
-        def fake_post(url, json, timeout):
+        def fake_post(url, json, timeout, headers=None):
             calls.append(json)
             return FakeResponse(text)
         monkeypatch.setattr(llm_mod.requests, "post", fake_post)
