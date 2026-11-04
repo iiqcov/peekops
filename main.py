@@ -24,6 +24,8 @@ from exporters.prometheus import PrometheusExporter
 from core.lock import ProcessLock
 from core.models import DiagnosticResult, ServerSnapshot
 from core.i18n import t
+from analyzers import anchors as anchor_ctx
+from analyzers.prom import PrometheusClient
 
 
 class DiagnosticRunner:
@@ -52,6 +54,10 @@ class DiagnosticRunner:
 
         snap     = self._collector.collect()
         anchored = self._detector.detect_anchored(snap)
+        if config.PROMETHEUS_QUERY_URL:
+            anchored = anchor_ctx.refine_with_growth(
+                anchored, PrometheusClient(config.PROMETHEUS_QUERY_URL), config.ANCHOR_CHANGE_WINDOW,
+                config.ANCHOR_MIN_MEM_GROWTH_MB, config.ANCHOR_MIN_CPU_GROWTH_CORES)
         issues   = [issue for issue, _ in anchored]
         anchors  = {issue: anchor for issue, anchor in anchored if anchor}
 

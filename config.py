@@ -33,6 +33,17 @@ PROMETHEUS_MULTIPROC_DIR: str = "/tmp/aiops_prometheus_multiproc"
 # ── Prometheus ────────────────────────────────────────
 PROMETHEUS_PORT: int = int(os.getenv("PROMETHEUS_PORT", "8000"))
 
+# ── Prometheus query (anchor selection by recent growth, #17) ──
+# Base URL of the Prometheus server that holds cAdvisor container metrics,
+# e.g. http://10.43.187.96 (ClusterIP is reachable from a K3s node).
+# Empty = disabled; anchors fall back to the top process at detection time.
+PROMETHEUS_QUERY_URL: str = os.getenv("PROMETHEUS_QUERY_URL", "")
+# How far back to compare when looking for the container that grew the most.
+ANCHOR_CHANGE_WINDOW: str = os.getenv("ANCHOR_CHANGE_WINDOW", "30m")
+# Growth below these is treated as "nothing changed" (keep the top-process anchor).
+ANCHOR_MIN_MEM_GROWTH_MB: float = float(os.getenv("ANCHOR_MIN_MEM_GROWTH_MB", "100"))
+ANCHOR_MIN_CPU_GROWTH_CORES: float = float(os.getenv("ANCHOR_MIN_CPU_GROWTH_CORES", "0.2"))
+
 # ── Scheduling ────────────────────────────────────────
 # Interval between diagnostic runs (seconds)
 INTERVAL_SEC: int = 600      # 10 minutes

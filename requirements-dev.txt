@@ -1,1 +1,2 @@
 pytest>=7.4
+promql-parser>=0.4

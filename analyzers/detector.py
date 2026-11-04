@@ -9,13 +9,13 @@ from core.i18n import t
 from core.models import Anchor, ServerSnapshot
 
 
-def _top_proc(snap: ServerSnapshot, key: str, field: str, unit: str) -> Anchor | None:
+def _top_proc(snap: ServerSnapshot, key: str, field: str, unit: str, metric: str) -> Anchor | None:
     procs = [p for p in snap.os.get(key, []) if isinstance(p, dict) and p.get("pid")]
     if not procs or not procs[0].get(field):
         return None
     p = procs[0]
     return Anchor(kind="pid", pid=int(p["pid"]), name=str(p.get("name") or ""),
-                  reason=f"top {field} {p.get(field)}{unit}")
+                  reason=f"top {field} {p.get(field)}{unit}", metric=metric)
 
 
 def _zombie_parent(snap: ServerSnapshot) -> Anchor | None:
@@ -44,10 +44,10 @@ class IssueDetector:
             found.append((text, anchor))
 
         def cpu_anchor() -> Anchor | None:
-            return _top_proc(snap, "top_cpu_procs", "cpu_percent", "%")
+            return _top_proc(snap, "top_cpu_procs", "cpu_percent", "%", "cpu")
 
         def mem_anchor() -> Anchor | None:
-            return _top_proc(snap, "top_mem_procs", "rss_mb", "MB")
+            return _top_proc(snap, "top_mem_procs", "rss_mb", "MB", "memory")
 
         cpu = snap.cpu
         if cpu.get("percent", 0) > thr["cpu_percent"]:

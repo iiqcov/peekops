@@ -111,6 +111,8 @@ cp .env.example .env
 | `DISCORD_REPORT_WEBHOOK` | — | 일간 리포트 웹훅 |
 | `LOG_FILE` | `/home/user/diagnostics.csv` | CSV 로그 경로 |
 | `PROMETHEUS_PORT` | `8000` | 메트릭 exporter 포트 |
+| `PROMETHEUS_QUERY_URL` | — | 컨테이너 증가량을 조회할 Prometheus 주소. 가장 많이 늘어난 컨테이너를 앵커로 지정 (비우면 미사용) |
+| `ANCHOR_CHANGE_WINDOW` | `30m` | 증가량 비교 구간 |
 | `INTERVAL_SEC` | `600` | 진단 실행 간격 (초) |
 | `THRESHOLD` | config.py 참고 | 메트릭별 임계값 |
 

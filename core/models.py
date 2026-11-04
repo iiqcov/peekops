@@ -32,6 +32,9 @@ class Anchor:
     name     : str = ""       # process name or pod name
     namespace: str = ""       # pods only
     reason   : str = ""       # why this is the anchor, e.g. "top RSS 6.1GB"
+    container: str = ""       # pods only, when the culprit container is known
+    since    : str = ""       # time window the change happened in, e.g. "30m"
+    metric   : str = ""       # "memory" | "cpu" when chosen from a resource metric
 
     @property
     def key(self) -> str:
@@ -41,7 +44,8 @@ class Anchor:
     def label(self) -> str:
         if self.kind == "pid":
             return f"PID {self.pid} ({self.name})"
-        return f"Pod {self.name} (namespace {self.namespace})"
+        container = f", container {self.container}" if self.container else ""
+        return f"Pod {self.name} (namespace {self.namespace}{container})"
 
 
 @dataclass
