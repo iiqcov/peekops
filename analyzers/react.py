@@ -4,32 +4,12 @@ ReAct (Reasoning + Acting) loop engine.
 """
 
 from __future__ import annotations
-import subprocess
 import time
 import config
 from core.i18n import t
 from core.models import ServerSnapshot, DiagnosticResult, ReActTurn
 from analyzers.llm import LLMClient
-
-# ── Security ──────────────────────────────────────────────────────────────────
-
-BLOCKED_COMMANDS = [
-    "rm ", "kill ", "pkill ", "reboot", "shutdown",
-    "mkfs", "dd ", "> /", "| sh", "| bash",
-    "chmod", "chown", "mv /", "cp /",
-    "systemctl stop", "systemctl disable",
-]
-
-ALLOWED_PREFIXES = [
-    "ps ", "top ", "free ", "df ", "du ",
-    "ls ", "cat /proc", "cat /etc",
-    "ss ", "netstat ", "ip ",
-    "dmesg", "journalctl",
-    "uptime", "who", "w ",
-    "lsof ", "grep ", "awk ", "sed ",
-    "systemctl status", "systemctl list",
-    "kubectl get", "kubectl describe", "kubectl logs",
-]
+from analyzers.command import CommandRunner  # noqa: F401  (re-exported)
 
 # ── Investigation hints by issue keyword ─────────────────────────────────────
 
@@ -50,44 +30,6 @@ ISSUE_HINTS: dict[str, str] = {
     "Internet"        : "ip route",
     "인터넷"          : "ip route",
 }
-
-
-class CommandRunner:
-    """Safely executes read-only shell commands."""
-
-    @staticmethod
-    def sanitize(cmd: str) -> str:
-        if not cmd or cmd.strip().upper() == "DONE":
-            return ""
-        cmd = cmd.strip().strip("`").replace('"', "").replace("'", "")
-        for blocked in BLOCKED_COMMANDS:
-            if blocked in cmd:
-                print(f"    [blocked] dangerous: {cmd}")
-                return ""
-        first = cmd.split("|")[0].strip()
-        if not any(first.startswith(p) for p in ALLOWED_PREFIXES):
-            print(f"    [blocked] not in allowlist: {cmd}")
-            return ""
-        return cmd
-
-    @staticmethod
-    def run(cmd: str, timeout: int = 8) -> str:
-        if not cmd:
-            return "no command"
-        try:
-            proc = subprocess.Popen(
-                cmd, shell=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            )
-            try:
-                out, err = proc.communicate(timeout=timeout)
-                return (out + err).strip()[:600]
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                return "timeout"
-        except Exception as e:
-            return f"failed: {e}"
 
 
 class PromptBuilder:
