@@ -9,7 +9,7 @@ import time
 import config
 from core.i18n import t
 from core.models import ServerSnapshot, DiagnosticResult, ReActTurn
-from analyzers.llm import LLMClient
+from analyzers.llm import LLMClient, create_client_or_disabled
 
 # ── Security ──────────────────────────────────────────────────────────────────
 
@@ -165,7 +165,7 @@ class ReActEngine:
     """
 
     def __init__(self, llm: LLMClient | None = None):
-        self._llm     = llm or LLMClient()
+        self._llm     = llm or create_client_or_disabled()
         self._runner  = CommandRunner()
         self._builder = PromptBuilder()
 

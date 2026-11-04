@@ -14,9 +14,26 @@ import os
 # "en" or "ko"
 LANGUAGE: str = os.getenv("AIOPS_LANG", "en")
 
+# ── LLM provider ──────────────────────────────────────
+# "ollama" (local, default) | "openai" (OpenAI-compatible API) | "gemini"
+LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama")
+
+# The prompt contains server state and command output (process lists, logs).
+# Non-local endpoints are refused unless this is explicitly enabled.
+LLM_ALLOW_EXTERNAL: bool = os.getenv("LLM_ALLOW_EXTERNAL", "false").lower() in ("1", "true", "yes")
+
 # ── Ollama ────────────────────────────────────────────
 OLLAMA_URL: str = os.getenv("OLLAMA_URL",   "http://localhost:11434/api/generate")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+
+# ── OpenAI-compatible (llama.cpp server, vLLM, LM Studio, cloud APIs) ──
+OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "http://localhost:8080/v1")
+OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
+# ── Gemini ────────────────────────────────────────────
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
 # ── Discord ───────────────────────────────────────────
 # Alert webhook  — triggered when severity is HIGH / MED / LOW

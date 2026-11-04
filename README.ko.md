@@ -59,7 +59,7 @@ peekops/
 │
 ├── analyzers/
 │   ├── detector.py        # 임계치 기반 이슈 감지
-│   ├── llm.py             # Ollama LLM 클라이언트
+│   ├── llm.py             # LLM 클라이언트 (기본 Ollama, OpenAI 호환, Gemini)
 │   └── react.py           # ReAct 루프 엔진
 │
 ├── notifiers/
@@ -107,6 +107,10 @@ cp .env.example .env
 | `AIOPS_LANG` | `en` | 출력 언어 (`en` 또는 `ko`) |
 | `OLLAMA_URL` | `http://localhost:11434/...` | Ollama 엔드포인트 |
 | `OLLAMA_MODEL` | `qwen3:8b` | 사용할 모델 |
+| `LLM_PROVIDER` | `ollama` | `ollama` · `openai`(OpenAI 호환) · `gemini` |
+| `LLM_ALLOW_EXTERNAL` | `false` | 외부 엔드포인트로 프롬프트(프로세스 목록, 로그) 전송 허용 여부 |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` / `OPENAI_API_KEY` | `http://localhost:8080/v1` | OpenAI 호환 서버 (llama.cpp, vLLM, LM Studio, 클라우드) |
+| `GEMINI_MODEL` / `GEMINI_API_KEY` | `gemini-2.5-flash` | Gemini API |
 | `DISCORD_ALERT_WEBHOOK` | — | 이상 감지 알림 웹훅 |
 | `DISCORD_REPORT_WEBHOOK` | — | 일간 리포트 웹훅 |
 | `LOG_FILE` | `/home/user/diagnostics.csv` | CSV 로그 경로 |
