@@ -8,8 +8,9 @@ import subprocess
 import time
 import config
 from core.i18n import t
-from core.models import ServerSnapshot, DiagnosticResult, ReActTurn
+from core.models import Anchor, ServerSnapshot, DiagnosticResult, ReActTurn
 from analyzers.llm import LLMClient
+from analyzers import anchors as anchor_ctx
 
 # ── Security ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,8 @@ class PromptBuilder:
 
     @staticmethod
     def build(snap: ServerSnapshot, issues: list[str], history: list[ReActTurn],
-              others: list[str] | tuple[str, ...] = ()) -> str:
+              others: list[str] | tuple[str, ...] = (),
+              anchor: Anchor | None = None, anchor_context: str = "") -> str:
         cpu = snap.cpu
         mem = snap.memory
         os_ = snap.os
@@ -115,8 +117,9 @@ class PromptBuilder:
             if h.result:
                 history_text += f"\n  result:\n{h.result[:400]}"
 
-        hints = [hint for kw, hint in ISSUE_HINTS.items()
-                 if any(kw in i for i in issues) and hint not in []]
+        hints = anchor_ctx.hints(anchor) if anchor else []
+        hints += [hint for kw, hint in ISSUE_HINTS.items()
+                  if any(kw in i for i in issues) and not (anchor and "<name>" in hint)]
         seen, unique_hints = set(), []
         for h in hints:
             if h not in seen:
@@ -124,6 +127,10 @@ class PromptBuilder:
                 unique_hints.append(h)
 
         hint_text  = "\n".join(f"- {h}" for h in unique_hints) or "none"
+        anchor_text = (
+            f"\n{t('react_anchor')}\n{anchor.label} — {anchor.reason}\n{anchor_context}\n"
+            if anchor else ""
+        )
         others_text = (
             f"\n{t('react_others')}\n" + "\n".join(f"- {o}" for o in others) + "\n"
             if others else ""
@@ -147,7 +154,7 @@ zombies  : {os_.get('zombie_count')}
 
 {t('react_issues')}
 {chr(10).join(f'- {i}' for i in issues)}
-{others_text}
+{anchor_text}{others_text}
 {t('react_hints')}
 {hint_text}
 
@@ -174,14 +181,38 @@ class ReActEngine:
         self._runner    = CommandRunner()
         self._builder   = PromptBuilder()
         self._turn_secs : list[float] = []
+        self._contexts  : dict[str, str] = {}
 
-    def run(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
+    def run(self, snap: ServerSnapshot, issues: list[str],
+            anchors: dict[str, Anchor] | None = None) -> DiagnosticResult:
         if snap.cpu.get("percent", 0) >= config.LLM_SKIP_CPU_THRESHOLD:
             print(f"  [ReAct] CPU >= {config.LLM_SKIP_CPU_THRESHOLD}% → rule-based fallback")
             return self._fallback(issues)
-        if len(issues) <= 1:
-            return self._run_single(snap, issues)
-        return self._run_per_issue(snap, issues)
+        anchors = anchors or {}
+        groups  = self._group_by_anchor(self._prioritize(issues), anchors)
+        if len(groups) <= 1:
+            return self._run_single(snap, issues, groups[0][1] if groups else None)
+        return self._run_per_issue(snap, issues, groups)
+
+    @staticmethod
+    def _group_by_anchor(
+        ordered: list[str], anchors: dict[str, Anchor],
+    ) -> list[tuple[list[str], Anchor | None]]:
+        """Issues pointing at the same PID/pod are investigated together (#6)."""
+        groups: dict[str, tuple[list[str], Anchor | None]] = {}
+        for issue in ordered:
+            anchor = anchors.get(issue)
+            key    = anchor.key if anchor else f"issue:{issue}"
+            groups.setdefault(key, ([], anchor))[0].append(issue)
+        return list(groups.values())
+
+    def _context(self, anchor: Anchor | None) -> str:
+        if anchor is None:
+            return ""
+        if anchor.key not in self._contexts:
+            print(f"  [anchor] {anchor.label} — {anchor.reason}: collecting context")
+            self._contexts[anchor.key] = anchor_ctx.collect(anchor, self._runner.run)
+        return self._contexts[anchor.key]
 
     # ── loops ────────────────────────────────────────────────────────────────
 
@@ -191,17 +222,19 @@ class ReActEngine:
         issues  : list[str],
         deadline: float | None = None,
         others  : list[str] | tuple[str, ...] = (),
+        anchor  : Anchor | None = None,
     ) -> list[ReActTurn]:
         """One ReAct loop over `issues`. Stops early when the deadline is near."""
         history : list[ReActTurn] = []
-        label   = issues[0] if len(issues) == 1 and others else ""
+        label   = " / ".join(issues) if others else ""
+        context = self._context(anchor)
 
         for turn_num in range(1, config.MAX_REACT_TURNS + 1):
             if deadline is not None and time.time() + self._turn_estimate() > deadline:
                 print(f"    → time budget reached, stopping after {len(history)} turns")
                 break
             print(f"\n  [ReAct {turn_num}/{config.MAX_REACT_TURNS}] LLM reasoning...")
-            prompt  = self._builder.build(snap, issues, history, others)
+            prompt  = self._builder.build(snap, issues, history, others, anchor, context)
             t0      = time.time()
             raw     = self._llm.generate(prompt)
             self._turn_secs.append(time.time() - t0)
@@ -232,9 +265,10 @@ class ReActEngine:
         """Time to reserve for one more turn: 1.5x the slowest turn so far, at least 30s."""
         return max(30.0, 1.5 * max(self._turn_secs, default=0.0))
 
-    def _run_single(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
+    def _run_single(self, snap: ServerSnapshot, issues: list[str],
+                    anchor: Anchor | None = None) -> DiagnosticResult:
         start   = time.time()
-        history = self._investigate(snap, issues)
+        history = self._investigate(snap, issues, anchor=anchor)
         if not history:
             return self._fallback(issues)
 
@@ -242,22 +276,29 @@ class ReActEngine:
         print(f"\n  [ReAct done] {len(history)} turns / {latency}s")
         return self._result(self._build_answer(issues, history), history, latency)
 
-    def _run_per_issue(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
-        """Give each issue its own loop (#4), highest rule severity first, within a time budget."""
+    def _run_per_issue(
+        self, snap: ServerSnapshot, issues: list[str],
+        groups: list[tuple[list[str], Anchor | None]],
+    ) -> DiagnosticResult:
+        """
+        Give each issue (or each group sharing an anchor) its own loop (#4),
+        highest rule severity first, within a time budget.
+        """
         start    = time.time()
         deadline = start + config.REACT_TIME_BUDGET_SEC
-        ordered  = self._prioritize(issues)
-        targets  = ordered[:config.MAX_ISSUES_PER_RUN]
-        skipped  = ordered[config.MAX_ISSUES_PER_RUN:]
+        ordered  = [i for group, _ in groups for i in group]
+        targets  = groups[:config.MAX_ISSUES_PER_RUN]
+        skipped  = [i for group, _ in groups[config.MAX_ISSUES_PER_RUN:] for i in group]
 
         findings: list[tuple[str, list[ReActTurn]]] = []
-        for i, issue in enumerate(targets, 1):
+        for n, (group, anchor) in enumerate(targets, 1):
             if time.time() + self._turn_estimate() > deadline:
-                skipped.append(issue)
+                skipped.extend(group)
                 continue
-            print(f"\n  [ReAct issue {i}/{len(targets)}] {issue}")
-            others = [o for o in issues if o != issue]
-            findings.append((issue, self._investigate(snap, [issue], deadline, others)))
+            label = " / ".join(group)
+            print(f"\n  [ReAct issue {n}/{len(targets)}] {label}")
+            others = [o for o in issues if o not in group]
+            findings.append((label, self._investigate(snap, group, deadline, others, anchor)))
 
         if not any(h for _, h in findings):
             return self._fallback(issues)
