@@ -18,6 +18,8 @@ from typing import Callable
 MAX_COMMAND_LEN = 300
 MAX_STAGES      = 4
 OUTPUT_LIMIT    = 600
+# Room kept for the stderr summary when a command also printed normal output.
+STDERR_SUMMARY_LIMIT = 160
 
 # Shell operators shlex can split out. Only "|" is allowed.
 _OPERATOR_CHARS = set("|;&<>()")
@@ -205,6 +207,27 @@ def parse(cmd: str) -> Pipeline:
     return Pipeline(stages)
 
 
+def format_output(out: str | None, err: str | None) -> str:
+    """
+    Fit a command's output into OUTPUT_LIMIT with stdout first.
+
+    peekops runs unprivileged, so commands like `du` print many "Permission
+    denied" lines. Mixed into stdout they used to fill the whole budget and
+    hide the real result (sizes), and the LLM then tried `2>/dev/null`, which
+    the policy rejects. Now normal output keeps the budget and stderr is
+    summarized after it; stderr is shown in full only when there is no stdout
+    (then the error itself is the information).
+    """
+    out = (out or "").strip()
+    err_lines = [l for l in (err or "").splitlines() if l.strip()]
+    if not out:
+        return "\n".join(err_lines)[:OUTPUT_LIMIT]
+    if not err_lines:
+        return out[:OUTPUT_LIMIT]
+    summary = f"[stderr: {len(err_lines)} line(s), e.g. {err_lines[0][:100]}]"[:STDERR_SUMMARY_LIMIT]
+    return f"{out[:OUTPUT_LIMIT - len(summary) - 1]}\n{summary}"
+
+
 class CommandRunner:
     """Validates and executes read-only commands without a shell."""
 
@@ -236,17 +259,17 @@ class CommandRunner:
                 p = subprocess.Popen(
                     argv, shell=False, stdin=prev_out,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT if last else subprocess.DEVNULL,
+                    stderr=subprocess.PIPE if last else subprocess.DEVNULL,
                     text=True,
                 )
                 if procs and procs[-1].stdout:
                     procs[-1].stdout.close()  # let upstream get SIGPIPE
                 procs.append(p)
                 prev_out = p.stdout
-            out, _ = procs[-1].communicate(timeout=timeout)
+            out, err = procs[-1].communicate(timeout=timeout)
             for p in procs[:-1]:
                 p.wait(timeout=1)
-            return (out or "").strip()[:OUTPUT_LIMIT]
+            return format_output(out, err)
         except subprocess.TimeoutExpired:
             return "timeout"
         except FileNotFoundError as e:
