@@ -10,6 +10,7 @@ from core.i18n import t
 from core.models import ServerSnapshot, DiagnosticResult, ReActTurn
 from analyzers.llm import LLMClient
 from analyzers.command import CommandRunner  # noqa: F401  (re-exported)
+from analyzers import kubectl
 
 # ── Investigation hints by issue keyword ─────────────────────────────────────
 
@@ -173,7 +174,7 @@ class ReActEngine:
                 if not cmd or cmd.upper() == "DONE":
                     done = True
                 else:
-                    command = self._runner.sanitize(cmd)
+                    command = self._runner.sanitize(kubectl.normalize(cmd))
         return analysis, command, done
 
     def _build_answer(self, issues: list[str], history: list[ReActTurn]) -> str:
