@@ -17,6 +17,8 @@ from analyzers import kubectl
 # Short ps columns only (#21): full command lines (`ps aux`) fill the 600-char
 # output budget with one long process and hide the rest, and may carry secrets
 # passed as arguments. etime helps spot a young process that is already large.
+# Disk: two levels deep and sorted in one call (#25), so a small model does not
+# have to walk the tree turn by turn (and mix up numbers on the way).
 ISSUE_HINTS: dict[str, str] = {
     "OOMKilled"       : "kubectl describe pod <name> -n <namespace>",
     "Pod abnormal"    : "kubectl describe pod <name> -n <namespace>",
@@ -25,8 +27,8 @@ ISSUE_HINTS: dict[str, str] = {
     "스왑"            : "ps -eo pid,rss,%mem,etime,comm --sort=-rss | head -10",
     "CPU overload"    : "ps -eo pid,%cpu,%mem,etime,comm --sort=-%cpu | head -10",
     "CPU 과부하"      : "ps -eo pid,%cpu,%mem,etime,comm --sort=-%cpu | head -10",
-    "Disk full"       : "du -sh /var /home /tmp",
-    "디스크"          : "du -sh /var /home /tmp",
+    "Disk full"       : "du -h --max-depth=2 /var /home /tmp | sort -h | tail -15",
+    "디스크"          : "du -h --max-depth=2 /var /home /tmp | sort -h | tail -15",
     "Zombie"          : "ps -eo pid,ppid,stat,etime,comm | grep Z",
     "좀비"            : "ps -eo pid,ppid,stat,etime,comm | grep Z",
     "Memory pressure" : "ps -eo pid,rss,%mem,etime,comm --sort=-rss | head -10",
