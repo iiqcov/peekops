@@ -10,6 +10,7 @@ The LLM proposes shell-like commands. They run on a production server, so:
 """
 
 from __future__ import annotations
+import glob
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -195,15 +196,49 @@ def parse(cmd: str) -> Pipeline:
         raise CommandRejected(f"more than {MAX_STAGES} pipeline stages")
 
     for argv in stages:
-        name = argv[0]
-        if "/" in name:
-            raise CommandRejected(f"command must be a bare name: {name}")
-        if name not in ALLOWED_COMMANDS:
-            raise CommandRejected(f"command not in allowlist: {name}")
-        rule = ALLOWED_COMMANDS[name]
-        if rule:
-            rule(argv)
+        validate_stage(argv)
 
+    return Pipeline(stages)
+
+
+def validate_stage(argv: list[str]) -> None:
+    name = argv[0]
+    if "/" in name:
+        raise CommandRejected(f"command must be a bare name: {name}")
+    if name not in ALLOWED_COMMANDS:
+        raise CommandRejected(f"command not in allowlist: {name}")
+    rule = ALLOWED_COMMANDS[name]
+    if rule:
+        rule(argv)
+
+
+MAX_GLOB_MATCHES = 100
+_GLOB_CHARS = set("*?[")
+
+
+def expand_globs(pipeline: Pipeline) -> Pipeline:
+    """
+    Expand path wildcards the way a shell would, without a shell (#25).
+
+    Commands run with shell=False, so `du -sh /home/*` used to reach du as the
+    literal name "/home/*" and fail. Only absolute-path arguments are expanded
+    (grep patterns such as `error.*` stay as they are), unmatched patterns stay
+    literal like in bash, and every expanded stage is validated again so a
+    wildcard cannot reach a path the policy rejects (e.g. `cat /etc/ss*`).
+    """
+    stages: list[list[str]] = []
+    for argv in pipeline.stages:
+        out = argv[:1]
+        for arg in argv[1:]:
+            if arg.startswith("/") and _GLOB_CHARS & set(arg):
+                matches = sorted(glob.glob(arg))
+                if len(matches) > MAX_GLOB_MATCHES:
+                    raise CommandRejected(f"wildcard matches more than {MAX_GLOB_MATCHES} paths: {arg}")
+                out.extend(matches or [arg])
+            else:
+                out.append(arg)
+        validate_stage(out)
+        stages.append(out)
     return Pipeline(stages)
 
 
@@ -247,7 +282,7 @@ class CommandRunner:
         if not cmd:
             return "no command"
         try:
-            pipeline = parse(cmd)
+            pipeline = expand_globs(parse(cmd))
         except CommandRejected as e:
             return f"blocked: {e}"
 
