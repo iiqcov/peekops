@@ -14,20 +14,23 @@ from analyzers import kubectl
 
 # ── Investigation hints by issue keyword ─────────────────────────────────────
 
+# Short ps columns only (#21): full command lines (`ps aux`) fill the 600-char
+# output budget with one long process and hide the rest, and may carry secrets
+# passed as arguments. etime helps spot a young process that is already large.
 ISSUE_HINTS: dict[str, str] = {
     "OOMKilled"       : "kubectl describe pod <name> -n <namespace>",
     "Pod abnormal"    : "kubectl describe pod <name> -n <namespace>",
     "Pod 이상"        : "kubectl describe pod <name> -n <namespace>",
-    "Swap overuse"    : "ps aux --sort=-%mem | head -10",
-    "스왑"            : "ps aux --sort=-%mem | head -10",
-    "CPU overload"    : "ps aux --sort=-%cpu | head -10",
-    "CPU 과부하"      : "ps aux --sort=-%cpu | head -10",
+    "Swap overuse"    : "ps -eo pid,rss,%mem,etime,comm --sort=-rss | head -10",
+    "스왑"            : "ps -eo pid,rss,%mem,etime,comm --sort=-rss | head -10",
+    "CPU overload"    : "ps -eo pid,%cpu,%mem,etime,comm --sort=-%cpu | head -10",
+    "CPU 과부하"      : "ps -eo pid,%cpu,%mem,etime,comm --sort=-%cpu | head -10",
     "Disk full"       : "du -sh /var /home /tmp",
     "디스크"          : "du -sh /var /home /tmp",
-    "Zombie"          : "ps aux | grep Z",
-    "좀비"            : "ps aux | grep Z",
-    "Memory pressure" : "ps aux --sort=-%mem | head -10",
-    "메모리"          : "ps aux --sort=-%mem | head -10",
+    "Zombie"          : "ps -eo pid,ppid,stat,etime,comm | grep Z",
+    "좀비"            : "ps -eo pid,ppid,stat,etime,comm | grep Z",
+    "Memory pressure" : "ps -eo pid,rss,%mem,etime,comm --sort=-rss | head -10",
+    "메모리"          : "ps -eo pid,rss,%mem,etime,comm --sort=-rss | head -10",
     "Internet"        : "ip route",
     "인터넷"          : "ip route",
 }
