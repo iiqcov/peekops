@@ -9,7 +9,7 @@ import config
 from core.i18n import t
 from core.models import ServerSnapshot, DiagnosticResult, ReActTurn
 from analyzers.llm import LLMClient
-from analyzers.command import CommandRunner  # noqa: F401  (re-exported)
+from analyzers.command import CommandRejected, CommandRunner, parse as parse_command  # noqa: F401
 from analyzers import kubectl
 
 # ── Investigation hints by issue keyword ─────────────────────────────────────
@@ -114,6 +114,7 @@ class ReActEngine:
         self._llm     = llm or LLMClient()
         self._runner  = CommandRunner()
         self._builder = PromptBuilder()
+        self._last_blocked: tuple[str, str] | None = None
 
     def run(self, snap: ServerSnapshot, issues: list[str]) -> DiagnosticResult:
         if snap.cpu.get("percent", 0) >= config.LLM_SKIP_CPU_THRESHOLD:
@@ -133,10 +134,21 @@ class ReActEngine:
                 break
 
             print(f"    raw: {repr(raw[:200])}")
+            self._last_blocked = None
             analysis, command, done = self._parse(raw)
             print(f"    analysis: {analysis}")
 
             turn = ReActTurn(turn=turn_num, analysis=analysis, command=command)
+
+            if not done and not command and self._last_blocked:
+                # A rejected command used to end the investigation (#23).
+                # Tell the model why and let it try again with an allowed one.
+                blocked_cmd, reason = self._last_blocked
+                turn.command = f"[blocked] {blocked_cmd}"
+                turn.result  = t("react_blocked", reason)
+                print(f"    → blocked, asking for another command: {reason}")
+                history.append(turn)
+                continue
 
             if done or not command:
                 history.append(turn)
@@ -177,8 +189,19 @@ class ReActEngine:
                 if not cmd or cmd.upper() == "DONE":
                     done = True
                 else:
-                    command = self._runner.sanitize(kubectl.normalize(cmd))
+                    fixed   = kubectl.normalize(cmd)
+                    command = self._runner.sanitize(fixed)
+                    if not command:
+                        self._last_blocked = (fixed, self._block_reason(fixed))
         return analysis, command, done
+
+    @staticmethod
+    def _block_reason(cmd: str) -> str:
+        try:
+            parse_command(cmd)
+        except CommandRejected as e:
+            return str(e)
+        return "rejected"
 
     def _build_answer(self, issues: list[str], history: list[ReActTurn]) -> str:
         last    = history[-1].analysis
